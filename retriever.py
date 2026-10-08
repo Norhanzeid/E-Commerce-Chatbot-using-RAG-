@@ -1,20 +1,24 @@
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
-def load_vector_db():
+_vector_db = None  # cached so we don't reload embeddings/index on every query
 
-    """Load the FAISS vector database with embeddings."""
-    embedding = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
-    
-    vector_db = FAISS.load_local(
-        "./data/vector_db",
-        embedding,
-        allow_dangerous_deserialization=True 
-    )
-    
-    return vector_db
+
+def load_vector_db():
+    """Load (and cache) the FAISS vector database with embeddings."""
+    global _vector_db
+    if _vector_db is None:
+        embedding = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2"
+        )
+
+        _vector_db = FAISS.load_local(
+            "./data/vector_db",
+            embedding,
+            allow_dangerous_deserialization=True
+        )
+
+    return _vector_db
 
 def retrieve_documents(query, k=3):
     """

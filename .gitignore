@@ -6,6 +6,8 @@ __pycache__/
 .Python
 
 # Virtual Environment
+.venv/
+.venv-1/
 venv/
 env/
 ENV/
@@ -13,6 +15,10 @@ ENV/
 # Environment variables
 .env
 .env.local
+
+# Project data and generated outputs
+background..jpeg
+data/
 
 # Vector Database
 data/vector_db/

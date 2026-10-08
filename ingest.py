@@ -1,12 +1,39 @@
 import os
+
+# Avoid Windows symlink permission errors (WinError 1314) when huggingface_hub caches models
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
+
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import TextLoader
-from docling.document_converter import DocumentConverter
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.datamodel.base_models import InputFormat
 from langchain_core.documents import Document
 
 ####################### INGESTION SCRIPT ########################
+
+# Source documents are read from data/raw/ so the project is portable across machines
+RAW_DATA_DIR = os.path.join("data", "raw")
+
+# OCR is enabled so text inside embedded images/screenshots/figures is extracted.
+# force_full_page_ocr=False keeps this hybrid/layout-aware: pages with a reliable
+# native text layer keep that text as-is, and OCR only runs on bitmap/picture
+# regions (e.g. screenshots) that have no selectable text, then Docling merges
+# both into a single reading-order text stream (native text + OCR text combined).
+_pdf_options = PdfPipelineOptions()
+_pdf_options.do_ocr = True
+_pdf_options.ocr_options.force_full_page_ocr = False
+_pdf_options.do_table_structure = True
+_pdf_options.generate_picture_images = True
+
+
+def _make_pdf_converter():
+    return DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=_pdf_options)}
+    )
+
 
 def ingest_documents():
 
@@ -15,70 +42,61 @@ def ingest_documents():
     # Create directory for vector database
 
     os.makedirs("data/vector_db", exist_ok=True)
+
+    if not os.path.isdir(RAW_DATA_DIR):
+        print(f"Source folder not found: {RAW_DATA_DIR}. Create it and add your TXT/PDF files.")
+        return
     
     documents = []
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=512, 
-        chunk_overlap=100,
+        chunk_size=1000,
+        chunk_overlap=150,
         length_function=len,
         separators=["\n\n", "\n", " ", ""]
     )
 
-    # ----------- Load TXT -----------
+    # ----------- Load all TXT files in data/raw -----------
 
-    print("Loading TXT file...")
+    txt_files = [f for f in os.listdir(RAW_DATA_DIR) if f.lower().endswith(".txt")]
+    for txt_name in txt_files:
+        print(f"Loading TXT file ({txt_name})...")
+        try:
+            txt_path = os.path.join(RAW_DATA_DIR, txt_name)
+            txt_loader = TextLoader(txt_path, encoding="utf8")
+            txt_docs = txt_loader.load()
+            txt_chunks = splitter.split_documents(txt_docs)
+            documents.extend(txt_chunks)
+            print(f"TXT loaded: {len(txt_chunks)} chunks created")
 
-    try:
-        txt_loader = TextLoader(
-            r"C:\Users\HP\Downloads\NLP.txt",
-            encoding="utf8"
-        )
-        txt_docs = txt_loader.load()
-        txt_chunks = splitter.split_documents(txt_docs)
-        documents.extend(txt_chunks)
-        print(f"TXT loaded: {len(txt_chunks)} chunks created")
+        except Exception as e:
+            print(f"Error loading TXT ({txt_name}): {e}")
 
-    except Exception as e:
-        print(f"Error loading TXT: {e}")
+    # ----------- Load all PDF files in data/raw using Docling -----------
 
-    # ----------- Load PDF 1 using Docling -----------
+    pdf_files = [f for f in os.listdir(RAW_DATA_DIR) if f.lower().endswith(".pdf")]
+    for pdf_name in pdf_files:
+        print(f"Loading PDF ({pdf_name})...")
+        try:
+            pdf_path = os.path.join(RAW_DATA_DIR, pdf_name)
+            converter = _make_pdf_converter()
+            result = converter.convert(pdf_path)
 
-    print("Loading PDF 1 (nlp-notes.pdf)...")
+            # Split by page so each chunk keeps a page-number for citation/debugging
+            page_marker = "\x00PAGE\x00"
+            pages_markdown = result.document.export_to_markdown(page_break_placeholder=page_marker).split(page_marker)
 
-    try:
-        pdf_path = r"C:\Users\HP\Downloads\nlp-notes.pdf"
-        converter = DocumentConverter()
-        result = converter.convert(pdf_path)
-        pdf_markdown = result.document.export_to_markdown()
-        
-        # Convert Markdown output into LangChain Document for embedding
-        pdf_doc = [Document(page_content=pdf_markdown, metadata={"source": "nlp-notes.pdf"})]
-        pdf_chunks = splitter.split_documents(pdf_doc)
-        documents.extend(pdf_chunks)
-        print(f"PDF 1 loaded: {len(pdf_chunks)} chunks created")
+            page_docs = [
+                Document(page_content=page_text, metadata={"source": pdf_name, "page": page_num})
+                for page_num, page_text in enumerate(pages_markdown, start=1)
+                if page_text.strip()
+            ]
+            pdf_chunks = splitter.split_documents(page_docs)
+            documents.extend(pdf_chunks)
+            print(f"PDF loaded: {len(pdf_chunks)} chunks created ({len(page_docs)} pages)")
 
-    except Exception as e:
-        print(f"Error loading PDF 1: {e}")
-
-    # ----------- Load PDF 2 (Reading4-NLP.pdf) -----------
-
-    print("Loading PDF 2 (Reading4-NLP.pdf)...")
-
-    try:
-        pdf_path2 = r"C:\Users\HP\Downloads\Reading4-NLP.pdf"
-        converter2 = DocumentConverter()
-        result2 = converter2.convert(pdf_path2)
-        pdf_markdown2 = result2.document.export_to_markdown()
-        
-        # Convert Markdown output into LangChain Document for embedding
-        pdf_doc2 = [Document(page_content=pdf_markdown2, metadata={"source": "Reading4-NLP.pdf"})]
-        pdf_chunks2 = splitter.split_documents(pdf_doc2)
-        documents.extend(pdf_chunks2)
-        print(f"PDF 2 loaded: {len(pdf_chunks2)} chunks created")
-
-    except Exception as e:
-        print(f" Error loading PDF 2: {e}")
+        except Exception as e:
+            print(f"Error loading PDF ({pdf_name}): {e}")
 
     # ----------- Create Vector DB -----------
     if not documents:
