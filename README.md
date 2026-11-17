@@ -4,6 +4,12 @@
 
 ShopSphere Insight is a local Streamlit chat application built with retrieval-augmented generation (RAG). It indexes PDF and plain-text business documents, finds relevant passages for a question, and asks an OpenAI chat model to answer using those passages as its source.
 
+
+
+## DEMO 
+
+Link Drive : https://drive.google.com/file/d/1K2S7WcoJWCKLcG9ILJ6zwH1KZAcFMRAn/view?usp=sharing
+
 ## Contents
 
 - [Features](#features)
