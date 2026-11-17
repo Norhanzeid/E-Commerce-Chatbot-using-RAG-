@@ -20,9 +20,6 @@ Link Drive : https://drive.google.com/file/d/1K2S7WcoJWCKLcG9ILJ6zwH1KZAcFMRAn/v
 - [Run the application](#run-the-application)
 - [Ask useful questions](#ask-useful-questions)
 - [Project layout](#project-layout)
-- [Configuration](#configuration)
-- [Troubleshooting](#troubleshooting)
-- [Privacy and limitations](#privacy-and-limitations)
 
 ## Features
 
@@ -150,47 +147,3 @@ The assistant can combine relevant retrieved passages, but its answer quality de
     ├── raw/            # Your source PDF and TXT files (local, not committed)
     └── vector_db/      # Generated FAISS index (local, not committed)
 ```
-
-## Configuration
-
-| Setting | Location | Default | Description |
-| --- | --- | --- | --- |
-| `OPENAI_API_KEY` | `.env` | Required | API key used by the OpenAI client. |
-| Chat model | `generator.py` | `gpt-4o-mini` | Model used to generate answers. |
-| Retrieved chunks | `main.py` | `k=6` | Number of relevant passages added to the answer context. |
-| Embedding model | `ingest.py`, `retriever.py` | `sentence-transformers/all-MiniLM-L6-v2` | Model used to embed source chunks and search queries. |
-| Chunk size / overlap | `ingest.py` | 1,000 / 150 characters | Text splitting settings applied before indexing. |
-
-Keep the embedding model consistent between ingestion and retrieval. If you change it, rebuild the index with `python ingest.py`.
-
-## Troubleshooting
-
-### `OPENAI_API_KEY not found in .env file!`
-
-Confirm that `.env` exists in the project root, uses the exact variable name `OPENAI_API_KEY`, and contains a valid key. Restart Streamlit after changing the file. Do not add `.env` to Git.
-
-### FAISS index or index files cannot be found
-
-Run `python ingest.py` from the repository root and confirm that it completed successfully and created files in `data/vector_db/`. The app does not build the index automatically.
-
-### `data/raw/` is empty or missing
-
-Create `data/raw/` and add PDF or TXT source files, then run ingestion again. Files and folders under `data/` are intentionally excluded from the repository.
-
-### PDF ingestion fails or takes a long time
-
-Docling's PDF conversion and OCR are resource-intensive. Check that the PDF opens correctly, allow the first model downloads to finish, and inspect the ingestion output for the filename and error. Text-based PDFs may process faster than scanned documents.
-
-### Answers are incomplete or incorrect
-
-Check that the source file was included during ingestion, rebuild the index after modifying it, and ask a more specific question. Retrieval-augmented generation can still miss context or produce errors; verify important business decisions against the original report.
-
-## Privacy and limitations
-
-- Source documents, extracted chunks, and the FAISS index are stored locally and are not committed to this repository.
-- The user's question and retrieved text are included in the request to OpenAI for answer generation. Do not index or query sensitive information unless its use with the configured API service is permitted.
-- The embedding model may be downloaded from Hugging Face the first time it is used.
-- The application is configured around ShopSphere business-report questions. Its prompt instructs the model not to answer unrelated questions or invent unsupported facts, but prompts cannot guarantee that every answer is correct.
-- Retrieved results are not presented as formal citations in the current interface.
-- OpenAI usage may incur charges and is subject to API availability, rate limits, and the account's model access.
-- Only process FAISS index files you trust. The retriever uses LangChain's dangerous-deserialization option to load the locally generated index.
